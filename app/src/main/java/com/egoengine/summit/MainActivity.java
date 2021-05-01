@@ -38,7 +38,11 @@ import java.text.DateFormatSymbols;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -125,6 +129,8 @@ public class MainActivity extends AppCompatActivity {
     private class Source {
         String name;
 
+        int cost = 0;
+
         HashMap<String, Integer> totalAmountCentsInCurrency = new HashMap<>();
 
         ArrayList<Message> messages = new ArrayList<>();
@@ -139,12 +145,12 @@ public class MainActivity extends AppCompatActivity {
 
         HashMap<String, Source> sources = new HashMap<>();
 
-        HashMap<String, Group> subgroups = new HashMap<>();
+        TreeMap<String, Group> subgroups = new TreeMap<>();
     }
 
-    private HashMap<String, Group> instruments = new HashMap<>();
+    private TreeMap<String, Group> instruments = new TreeMap<>();
 
-    private Group getOrAddGroup(Group parent, HashMap<String, Group> map, String name) {
+    private Group getOrAddGroup(Group parent, TreeMap<String, Group> map, String name) {
         if (!map.containsKey(name)) {
             Group group = new Group();
 
@@ -178,6 +184,13 @@ public class MainActivity extends AppCompatActivity {
 
         Integer curr = source.totalAmountCentsInCurrency.getOrDefault(message.processed.amountCurr, new Integer(0));
         source.totalAmountCentsInCurrency.put(message.processed.amountCurr, curr + message.processed.amountCents);
+
+        if (message.processed.amountCurr.equals("USD"))
+            source.cost += message.processed.amountCents;
+        else if (message.processed.amountCurr.equals("EUR"))
+            source.cost += message.processed.amountCents;
+        else if (message.processed.amountCurr.equals("RUB"))
+            source.cost += message.processed.amountCents / 70;
     }
 
     private void loadDatabase() {
@@ -461,9 +474,15 @@ public class MainActivity extends AppCompatActivity {
                 linearLayout.addView(v);
             }
         } else if (currentLevel == desiredLevel) {
-            for (String name : selectedGroup.sources.keySet()) {
-                Source source = selectedGroup.sources.get(name);
+            ArrayList<Source> sources = new ArrayList<>();
 
+            for (Source source : selectedGroup.sources.values()) {
+                sources.add(source);
+            }
+
+            sources.sort((a, b) -> a.cost == b.cost ? 0 : a.cost > b.cost ? -1 : 1);
+
+            for (Source source : sources) {
                 View v = inflater.inflate(R.layout.source_list_item, null);
 
                 TextView viewName = v.findViewById(R.id.sourceName);
@@ -545,8 +564,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        if (currentLevel > 0)
-        {
+        if (currentLevel > 0) {
             currentLevel -= 1;
 
             if (selectedSource != null)
@@ -556,11 +574,8 @@ public class MainActivity extends AppCompatActivity {
 
             updateSourceList();
             return;
-        }
-        else if (currentLevel == 0)
-        {
-            if (selectedInstrument != null)
-            {
+        } else if (currentLevel == 0) {
+            if (selectedInstrument != null) {
                 selectedInstrument = null;
                 showInstrumentList();
                 return;
