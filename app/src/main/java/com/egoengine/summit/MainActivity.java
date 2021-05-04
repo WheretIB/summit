@@ -104,7 +104,7 @@ public class MainActivity extends AppCompatActivity {
         HashMap<String, Integer> totalAmountCentsInCurrency = new HashMap<>();
     }
 
-    ArrayList<Message> messages = new ArrayList<>();
+    private ArrayList<Message> messages = new ArrayList<>();
     private TreeMap<String, Group> instruments = new TreeMap<>();
 
     private Group getOrAddGroup(Group parent, TreeMap<String, Group> map, String name, boolean sortByCost, boolean showCount) {
@@ -207,7 +207,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    boolean processMessage(Message msg) {
+    private boolean processMessage(Message msg) {
         try {
             ProcessedData processed = new ProcessedData();
 
