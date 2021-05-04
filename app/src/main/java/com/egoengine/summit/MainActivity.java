@@ -6,42 +6,28 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
-
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.ColorInt;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResultLauncher;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.UserDictionary;
 import android.util.Log;
-import android.util.Pair;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.w3c.dom.Text;
-
 import java.text.DateFormatSymbols;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.SortedMap;
+import java.util.Locale;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,31 +41,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.entry_splash);
 
         Handler handler = new Handler(Looper.getMainLooper());
-        handler.postDelayed(() -> checkForPermissions(), 500);
-        /*
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);*/
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        //getMenuInflater().inflate(R.menu.menu_scrolling, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+        handler.postDelayed(this::checkForPermissions, 1000);
     }
 
     private void checkForPermissions() {
@@ -126,36 +88,33 @@ public class MainActivity extends AppCompatActivity {
         ProcessedData processed;
     }
 
-    private class Source {
-        String name;
-
-        int cost = 0;
-
-        HashMap<String, Integer> totalAmountCentsInCurrency = new HashMap<>();
-
-        ArrayList<Message> messages = new ArrayList<>();
-    }
-
     private class Group {
         Group parent = null;
 
         String name;
+        boolean sortByCost = false;
+        boolean showCount = false;
+
+        TreeMap<String, Group> subgroups = new TreeMap<>();
 
         ArrayList<Message> messages = new ArrayList<>();
 
-        HashMap<String, Source> sources = new HashMap<>();
+        int cost = 0;
 
-        TreeMap<String, Group> subgroups = new TreeMap<>();
+        HashMap<String, Integer> totalAmountCentsInCurrency = new HashMap<>();
     }
 
+    ArrayList<Message> messages = new ArrayList<>();
     private TreeMap<String, Group> instruments = new TreeMap<>();
 
-    private Group getOrAddGroup(Group parent, TreeMap<String, Group> map, String name) {
+    private Group getOrAddGroup(Group parent, TreeMap<String, Group> map, String name, boolean sortByCost, boolean showCount) {
         if (!map.containsKey(name)) {
             Group group = new Group();
 
             group.parent = parent;
             group.name = name;
+            group.sortByCost = sortByCost;
+            group.showCount = showCount;
 
             map.put(name, group);
             return group;
@@ -164,33 +123,18 @@ public class MainActivity extends AppCompatActivity {
         return map.get(name);
     }
 
-    private Source getOrAddSource(HashMap<String, Source> map, String name) {
-        if (!map.containsKey(name)) {
-            Source source = new Source();
-            source.name = name;
-            map.put(name, source);
-            return source;
-        }
-
-        return map.get(name);
-    }
-
     private void appendMessage(Group group, Message message) {
         group.messages.add(message);
 
-        Source source = getOrAddSource(group.sources, message.processed.place);
-
-        source.messages.add(message);
-
-        Integer curr = source.totalAmountCentsInCurrency.getOrDefault(message.processed.amountCurr, new Integer(0));
-        source.totalAmountCentsInCurrency.put(message.processed.amountCurr, curr + message.processed.amountCents);
+        Integer curr = group.totalAmountCentsInCurrency.getOrDefault(message.processed.amountCurr, 0);
+        group.totalAmountCentsInCurrency.put(message.processed.amountCurr, curr + message.processed.amountCents);
 
         if (message.processed.amountCurr.equals("USD"))
-            source.cost += message.processed.amountCents;
+            group.cost += message.processed.amountCents;
         else if (message.processed.amountCurr.equals("EUR"))
-            source.cost += message.processed.amountCents;
+            group.cost += message.processed.amountCents;
         else if (message.processed.amountCurr.equals("RUB"))
-            source.cost += message.processed.amountCents / 70;
+            group.cost += message.processed.amountCents / 70;
     }
 
     private void loadDatabase() {
@@ -213,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
                 int count = cursor.getCount();
 
                 progressBar.setProgress(0);
-                textViewProgress.setText(String.format("0/%d", count));
+                textViewProgress.setText(String.format(Locale.US, "0/%d", count));
 
                 if (cursor.moveToFirst()) {
                     do {
@@ -237,23 +181,7 @@ public class MainActivity extends AppCompatActivity {
                             message.dateProcessed = new java.sql.Date(Long.parseLong(message.date));
 
                             if (processMessage(message)) {
-                                Group instrument = getOrAddGroup(null, instruments, message.address + " " + message.processed.card);
-
-                                appendMessage(instrument, message);
-
-                                Calendar cal = Calendar.getInstance();
-                                cal.setTime(message.dateProcessed);
-
-                                Group year = getOrAddGroup(instrument, instrument.subgroups, String.valueOf(cal.get(Calendar.YEAR)));
-
-                                appendMessage(year, message);
-
-                                DateFormatSymbols dfs = new DateFormatSymbols();
-                                String[] months = dfs.getMonths();
-
-                                Group month = getOrAddGroup(year, year.subgroups, months[cal.get(Calendar.MONTH)]);
-
-                                appendMessage(month, message);
+                                messages.add(message);
                             }
                         } catch (Exception e) {
                             Log.e("SUMMIT", e.getMessage());
@@ -264,10 +192,12 @@ public class MainActivity extends AppCompatActivity {
                 cursor.close();
 
                 progressBar.setProgress(100);
-                textViewProgress.setText(String.format("%d/%d", count, count));
+                textViewProgress.setText(String.format(Locale.US, "%d/%d", count, count));
+
+                rebuildInstruments(1);
 
                 Handler handler = new Handler(Looper.getMainLooper());
-                handler.postDelayed(() -> showInstrumentList(), 500);
+                handler.postDelayed(this::showInstrumentList, 1000);
             } else {
                 progressBar.setProgress(0);
                 textViewProgress.setText("No SMS");
@@ -360,6 +290,11 @@ public class MainActivity extends AppCompatActivity {
         for (String name : instruments.keySet()) {
             Group instrument = instruments.get(name);
 
+            if (instrument == null) {
+                Log.w("SUMMIT", "showInstrumentList() For some reason, instrument is null");
+                continue;
+            }
+
             View v = inflater.inflate(R.layout.instrument_list_item, null);
 
             TextView viewName = v.findViewById(R.id.instrumentName);
@@ -379,26 +314,70 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private int activeLevel = 0;
 
-    private Group selectedInstrument = null;
+    private void rebuildInstruments(int level) {
+        activeLevel = level;
+
+        instruments.clear();
+
+        DateFormatSymbols dfs = new DateFormatSymbols();
+        String[] months = dfs.getMonths();
+
+        // All time
+        for (Message message : messages) {
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(message.dateProcessed);
+
+            Group instrument = getOrAddGroup(null, instruments, message.address + " " + message.processed.card, level == 0, false);
+            appendMessage(instrument, message);
+
+            Group folder = instrument;
+
+            if (level >= 1) {
+                Group year = getOrAddGroup(folder, folder.subgroups, String.valueOf(cal.get(Calendar.YEAR)), level == 1, false);
+                appendMessage(year, message);
+
+                folder = year;
+            }
+
+            if (level >= 2) {
+                Group month = getOrAddGroup(folder, folder.subgroups, String.format(Locale.US, "%02d: %s", (cal.get(Calendar.MONTH) + 1), months[cal.get(Calendar.MONTH)]), level == 2, false);
+                appendMessage(month, message);
+
+                folder = month;
+            }
+
+            if (!message.processed.topPlace.equals(message.processed.place)) {
+                Group topPlace = getOrAddGroup(folder, folder.subgroups, message.processed.topPlace, true, true);
+                appendMessage(topPlace, message);
+
+                folder = topPlace;
+            }
+
+            Group place = getOrAddGroup(folder, folder.subgroups, message.processed.place, false, false);
+            appendMessage(place, message);
+
+            Group element = getOrAddGroup(place, place.subgroups, message.dateProcessed.toString(), false, false);
+            appendMessage(element, message);
+        }
+    }
+
+    private String selectedInstrument = null;
     private Group selectedGroup = null;
-    private Source selectedSource = null;
 
-    private int desiredLevel = 0;
     private int currentLevel = 0;
 
     private void selectInstrument(Group instrument) {
-        selectedInstrument = instrument;
+        selectedInstrument = instrument.name;
         selectedGroup = instrument;
-        selectedSource = null;
-        desiredLevel = 1; // Start with year
         currentLevel = 0;
 
         setContentView(R.layout.source_list);
 
         TextView title = findViewById(R.id.instrumentTitleName);
 
-        title.setText(selectedInstrument.name);
+        title.setText(selectedInstrument);
 
         updateSourceList();
     }
@@ -411,23 +390,17 @@ public class MainActivity extends AppCompatActivity {
         updateSourceList();
     }
 
-    private void selectSource(Source source) {
-        selectedSource = source;
-
-        currentLevel++;
-
-        updateSourceList();
-    }
-
     private void toggleLevel() {
-        desiredLevel += 1;
+        int desiredLevel = activeLevel + 1;
 
         if (desiredLevel > 2) {
             desiredLevel = 0;
         }
 
         currentLevel = 0;
-        selectedGroup = selectedInstrument;
+
+        rebuildInstruments(desiredLevel);
+        selectedGroup = instruments.get(selectedInstrument);
 
         updateSourceList();
     }
@@ -435,11 +408,11 @@ public class MainActivity extends AppCompatActivity {
     private void updateSourceList() {
         Button level = findViewById(R.id.sourceTypeButton);
 
-        if (desiredLevel == 0)
+        if (activeLevel == 0)
             level.setText("All Time");
-        else if (desiredLevel == 1)
+        else if (activeLevel == 1)
             level.setText("Year");
-        else if (desiredLevel == 2)
+        else if (activeLevel == 2)
             level.setText("Month");
 
         level.setOnClickListener(view -> toggleLevel());
@@ -452,113 +425,63 @@ public class MainActivity extends AppCompatActivity {
 
         boolean primary = true;
 
-        if (currentLevel < desiredLevel) {
-            for (String name : selectedGroup.subgroups.keySet()) {
-                Group group = selectedGroup.subgroups.get(name);
+        ArrayList<Group> groups = new ArrayList<>(selectedGroup.subgroups.values());
 
-                View v = inflater.inflate(R.layout.source_list_item, null);
+        if (selectedGroup.sortByCost)
+            groups.sort((a, b) -> a.cost == b.cost ? 0 : a.cost > b.cost ? -1 : 1);
 
-                TextView viewName = v.findViewById(R.id.sourceName);
-                TextView viewAmount = v.findViewById(R.id.sourceAmount);
+        for (Group group : groups) {
+            View v = inflater.inflate(R.layout.source_list_item, null);
 
+            TextView viewName = v.findViewById(R.id.sourceName);
+            TextView viewAmount = v.findViewById(R.id.sourceAmount);
+
+            if (group.showCount)
+                viewName.setText(String.format(Locale.US, "%s (%d)", group.name, group.subgroups.size()));
+            else
                 viewName.setText(group.name);
-                viewAmount.setText("");
 
-                v.setBackgroundColor(primary ? getResources().getColor(R.color.colorPrimary) : getResources().getColor(R.color.colorPrimaryDark));
-                primary = !primary;
+            String amount = "";
 
-                v.setMinimumHeight((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 70, getResources().getDisplayMetrics()));
+            for (String curr : group.totalAmountCentsInCurrency.keySet()) {
+                String currName = curr;
 
-                v.setOnClickListener(view -> selectGroup(group));
-
-                linearLayout.addView(v);
-            }
-        } else if (currentLevel == desiredLevel) {
-            ArrayList<Source> sources = new ArrayList<>();
-
-            for (Source source : selectedGroup.sources.values()) {
-                sources.add(source);
-            }
-
-            sources.sort((a, b) -> a.cost == b.cost ? 0 : a.cost > b.cost ? -1 : 1);
-
-            for (Source source : sources) {
-                View v = inflater.inflate(R.layout.source_list_item, null);
-
-                TextView viewName = v.findViewById(R.id.sourceName);
-                TextView viewAmount = v.findViewById(R.id.sourceAmount);
-
-                viewName.setText(source.name);
-
-                String amount = "";
-
-                for (String curr : source.totalAmountCentsInCurrency.keySet()) {
-                    String currName = curr;
-
-                    if (currName.equals("USD"))
+                switch (currName) {
+                    case "USD":
                         currName = "$";
-                    else if (currName.equals("EUR"))
+                        break;
+                    case "EUR":
                         currName = "€";
-                    else
+                        break;
+                    case "RUB":
+                        currName = "\u20BD";
+                        break;
+                    default:
                         currName += " ";
-
-                    int amountCents = source.totalAmountCentsInCurrency.get(curr);
-
-                    if (!amount.isEmpty())
-                        amount += "\n";
-
-                    amount += currName + String.format("%d.%02d", amountCents / 100, amountCents % 100);
+                        break;
                 }
 
-                viewAmount.setText(amount);
-
-                v.setBackgroundColor(primary ? getResources().getColor(R.color.colorPrimary) : getResources().getColor(R.color.colorPrimaryDark));
-                primary = !primary;
-
-                v.setMinimumHeight((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 70, getResources().getDisplayMetrics()));
-
-                v.setOnClickListener(view -> selectSource(source));
-
-                linearLayout.addView(v);
-            }
-        } else {
-            for (Message message : selectedSource.messages) {
-                View v = inflater.inflate(R.layout.source_list_item, null);
-
-                TextView viewName = v.findViewById(R.id.sourceName);
-                TextView viewAmount = v.findViewById(R.id.sourceAmount);
-
-                viewName.setText(message.dateProcessed.toString());
-
-                String amount = "";
-
-                String currName = message.processed.amountCurr;
-
-                if (currName.equals("USD"))
-                    currName = "$";
-                else if (currName.equals("EUR"))
-                    currName = "€";
-                else
-                    currName += " ";
-
-                int amountCents = message.processed.amountCents;
+                int amountCents = group.totalAmountCentsInCurrency.getOrDefault(curr, 0);
 
                 if (!amount.isEmpty())
                     amount += "\n";
 
-                amount += currName + String.format("%d.%02d", amountCents / 100, amountCents % 100);
-
-                viewAmount.setText(amount);
-
-                v.setBackgroundColor(primary ? getResources().getColor(R.color.colorPrimary) : getResources().getColor(R.color.colorPrimaryDark));
-                primary = !primary;
-
-                v.setMinimumHeight((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 70, getResources().getDisplayMetrics()));
-
-                v.setOnClickListener(null);
-
-                linearLayout.addView(v);
+                amount += currName + String.format(Locale.US, "%d.%02d", amountCents / 100, amountCents % 100);
             }
+
+            viewAmount.setText(amount);
+
+            v.setBackgroundColor(primary ? getResources().getColor(R.color.colorPrimary) : getResources().getColor(R.color.colorPrimaryDark));
+            primary = !primary;
+
+            v.setMinimumHeight((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 70, getResources().getDisplayMetrics()));
+
+            if (group.subgroups.isEmpty())
+                v.setOnClickListener(null);
+            else
+                v.setOnClickListener(view -> selectGroup(group));
+
+            linearLayout.addView(v);
         }
     }
 
@@ -567,10 +490,7 @@ public class MainActivity extends AppCompatActivity {
         if (currentLevel > 0) {
             currentLevel -= 1;
 
-            if (selectedSource != null)
-                selectedSource = null;
-            else
-                selectedGroup = selectedGroup.parent;
+            selectedGroup = selectedGroup.parent;
 
             updateSourceList();
             return;
