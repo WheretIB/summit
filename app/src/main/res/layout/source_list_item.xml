@@ -21,6 +21,7 @@
         android:layout_height="match_parent"
         android:layout_weight="0.5"
         android:gravity="center"
+        android:minWidth="100dp"
         android:paddingRight="@dimen/text_margin"
         android:text="TextView"
         android:textAlignment="textEnd"
